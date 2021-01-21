@@ -70,13 +70,12 @@ architecture Behavioral of project_reti_logiche is
     -- ram sbagliata
     type ram_type is array (65535 downto 0) of std_logic_vector(7 downto 0);
     signal ram : ram_type;
-    signal max_number : std_logic_vector(7 downto 0):= "00000000";
-    signal min_number : std_logic_vector(7 downto 0) := "11111111";
-    signal shift_level : std_logic_vector(7 downto 0) := "00000000";
-    signal temp_pixel : std_logic_vector(15 downto 0) := "0000000000000000";
-    signal delta : std_logic_vector(7 downto 0) := "00000000";
-    signal temp_pixel2 : std_logic_vector(15 downto 0) := "0000000000000000";
-   -- sistemare con "others"
+    signal max_number : std_logic_vector(7 downto 0):= (others => '0');
+    signal min_number : std_logic_vector(7 downto 0) := (others => '1');
+    signal shift_level : std_logic_vector(7 downto 0) := (others => '0');
+    signal temp_pixel : std_logic_vector(15 downto 0) := (others => '0');
+    signal delta : std_logic_vector(7 downto 0) := (others => '0');
+    signal temp_pixel2 : std_logic_vector(15 downto 0) := (others => '0');
     
 begin
 
@@ -132,11 +131,11 @@ begin
                
                 when DATA_REQUEST =>
                     -- salvo in un vector di 16 bit l'indirizzo finale della ram che si avrà dopo la scrittura dell'immagine
-                    end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
-                        --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
+                    --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
+                    end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
                     if (conv_integer(dimension) + 2  = conv_integer(contatore)) then
-                        current_state <= ELABORATION4;
-                        contatore <= "0000000000000010";
+                        current_state <= ELABORATION;
+                        contatore <= (1 => '1', others => '0');
                         o_en <= '0';
                         -- necessario fare la doppia conversione qua sotto???
                         -- calcolo del delta value
@@ -150,7 +149,7 @@ begin
                     
                 -- calcolo shift_level (funzione "floor")
                 -- perché non usi direttamente floor?
-                when ELABORATION4 =>
+                when ELABORATION =>
                     if((conv_integer(delta)) = 0)then
                         shift_level <= "00001000";
                     elsif(((conv_integer(delta))) <= 2 and (conv_integer(delta)) >= 1) then
@@ -171,7 +170,7 @@ begin
                         shift_level <= "10000000";
                     end if;
                   
-                current_state <= ELABORATION;
+                current_state <= ELABORATION2;
                            
                -- lettura pixel
                 when DATA_FROM_RAM =>
@@ -179,13 +178,13 @@ begin
                     current_state <= WAITING;
                     
                 -- calcolo nuovo valore del pixel: differenza tra valore corrente e valore minimo
-                when ELABORATION =>
+                when ELABORATION2 =>
                    temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(ram(conv_integer(contatore))) - conv_integer(min_number)), 16));
-                   current_state <= ELABORATION5;
+                   current_state <= ELABORATION3;
 
                 -- calcolo nuovo valore del pixel: shift dei bit di "shift_level"
                 -- usare la funzione apposita
-                WHEN ELABORATION5 =>
+                WHEN ELABORATION3 =>
                     if((conv_integer(shift_level)) = 0) then
                         temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)), 16));
                     elsif(((conv_integer(shift_level))) = 1) then
@@ -209,10 +208,10 @@ begin
                     -- temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*(2**(conv_integer(shift_level))) ) ,16 )) ;
                     --*(2**(conv_integer(shift_level));
                 
-                    current_state <=  ELABORATION2;
+                    current_state <=  ELABORATION4;
 
                 -- controllo sul nuovo valore (< 256) e 
-                when ELABORATION2 =>
+                when ELABORATION4 =>
                     if(conv_integer(temp_pixel) >= 255) then
                         temp_pixel <= "0000000011111111";
                     end if;
@@ -222,13 +221,13 @@ begin
                         contatore <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + 1 , 16));
                     else 
                         o_address <= (others => '0');
-                        current_state <= ELABORATION3;
+                        current_state <= ELABORATION5;
                     end if;
                    
                 -- ma scrive prima nella ram "locale" e poi lo fa davvero in un altro stato?
-                when ELABORATION3 =>
+                when ELABORATION5 =>
                     ram(conv_integer(contatore) + conv_integer(dimension)) <= temp_pixel(7 downto 0);
-                    current_state <= ELABORATION;
+                    current_state <= ELABORATION2;
                     contatore <= contatore + 1;
                      
                 -- necessità di due cicli di clock per ricevere il dato
