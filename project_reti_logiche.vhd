@@ -52,7 +52,7 @@ end project_reti_logiche;
 architecture Behavioral of project_reti_logiche is
 
     -- stati
-    type state_type is (START, COLUMN_REQUEST, ROW_REQUEST, DATA_REQUEST, DATA_FROM_RAM, ELABORATION, DATA_TO_RAM, WAITING, WAITING_INITIAL, FINISH, CALC_DIMENSION, WAITING2, ELABORATION2,ELABORATION3,ELABORATION4, ELABORATION5, PREPARATION_TO_WRITE);
+    type state_type is (START, COLUMN_REQUEST, ROW_REQUEST, DATA_REQUEST, DATA_FROM_RAM, ELABORATION, DATA_TO_RAM, WAITING, FINISH, CALC_DIMENSION, WAITING_MAX_MIN, ELABORATION2,ELABORATION3,ELABORATION4,  PREPARATION_TO_WRITE,  GET_DATA);
     
     -- segnali
     signal current_state :  state_type;
@@ -62,6 +62,7 @@ architecture Behavioral of project_reti_logiche is
     signal dimension : std_logic_vector(15 downto 0) ;
     signal end_dimension : std_logic_vector(15 downto 0) ;
     signal contatore : std_logic_vector(15 downto 0);
+    signal contatore_WRITE : std_logic_vector(15 downto 0);
     signal N_COL : integer;
     signal N_RIG : integer;
     signal vertical_dimension : std_logic_vector(7 downto 0);
@@ -98,8 +99,8 @@ begin
                         
                         dimension <= (others => '0');
                         contatore <= (others => '0');
-                        
-                        current_state <= WAITING_INITIAL;
+                         contatore_WRITE <= (others => '0');
+                        current_state <= WAITING;
                         next_state <= COLUMN_REQUEST;
                     end if;
                     
@@ -111,11 +112,11 @@ begin
                     o_en <= '1';
                     o_address <= (0 => '1', others => '0');
                     next_state <= ROW_REQUEST;
-                    current_state <= WAITING_INITIAL;
+                    current_state <= WAITING;
                     contatore <= contatore + 1;
                     
                 -- necessità di attendere un periodo di clock in più
-                when WAITING_INITIAL =>
+                when WAITING =>
                      current_state <= next_state;
                     
                 when ROW_REQUEST =>
@@ -147,6 +148,29 @@ begin
                         next_state <= DATA_REQUEST;
                     end if;
                     
+                -- lettura pixel
+                when DATA_FROM_RAM =>
+                    o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore));
+                    current_state <= WAITING;
+                    next_state <= WAITING_MAX_MIN;
+                -- calcolo nuovo valore del pixel: differenza tra valore corrente e valore minimo
+                    
+                    
+                -- necessità di due cicli di clock per ricevere il dato
+                  
+                         
+                when WAITING_MAX_MIN => 
+                    -- ram(conv_integer(contatore)) <= i_data;
+                    contatore <= contatore + 1;
+                    -- ricerca del valore massimo e del valore minimo                 
+                    if(conv_integer(min_number) > conv_integer(i_data)) then
+                        min_number <= i_data;
+                    end if;
+                    if(conv_integer(max_number) < conv_integer(i_data)) then
+                    max_number <= i_data;
+                    end if;
+                    current_state <= DATA_REQUEST;
+        
                 -- calcolo shift_level (funzione "floor")
                 -- perché non usi direttamente floor?
                 when ELABORATION =>
@@ -170,16 +194,21 @@ begin
                         shift_level <= "10000000";
                     end if;
                   
-                current_state <= ELABORATION2;
-                           
-               -- lettura pixel
-                when DATA_FROM_RAM =>
+                    current_state <= GET_DATA;
+
+
+
+                when GET_DATA =>
+                    --VEDERE SE LA DIMENSIONE è ZERO 
+                    o_we <= '0';
+                    o_en <= '1';
                     o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore));
                     current_state <= WAITING;
-                    
-                -- calcolo nuovo valore del pixel: differenza tra valore corrente e valore minimo
+                    next_state <= ELABORATION2;
+
+
                 when ELABORATION2 =>
-                   temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(ram(conv_integer(contatore))) - conv_integer(min_number)), 16));
+                   temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(i_data) - conv_integer(min_number)), 16));
                    current_state <= ELABORATION3;
 
                 -- calcolo nuovo valore del pixel: shift dei bit di "shift_level"
@@ -216,44 +245,26 @@ begin
                         temp_pixel <= "0000000011111111";
                     end if;
                  
-                    if(conv_integer(dimension) + 2  <= conv_integer(contatore)) then
-                        current_state <= PREPARATION_TO_WRITE;
-                        contatore <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + 1 , 16));
-                    else 
-                        o_address <= (others => '0');
-                        current_state <= ELABORATION5;
-                    end if;
                    
+                    current_state <= PREPARATION_TO_WRITE;
+                    contatore_WRITE <= STD_LOGIC_VECTOR(TO_UNSIGNED( conv_integer(dimension) + conv_integer(CONTATORE), 16));
                 -- ma scrive prima nella ram "locale" e poi lo fa davvero in un altro stato?
-                when ELABORATION5 =>
-                    ram(conv_integer(contatore) + conv_integer(dimension)) <= temp_pixel(7 downto 0);
-                    current_state <= ELABORATION2;
-                    contatore <= contatore + 1;
+              
                      
-                -- necessità di due cicli di clock per ricevere il dato
-                when WAITING =>
-                    current_state <= WAITING2;
-                    
-                when WAITING2 => 
-                    ram(conv_integer(contatore)) <= i_data;
-                    contatore <= contatore + 1;
-                    -- ricerca del valore massimo e del valore minimo                 
-                    if(conv_integer(min_number) > conv_integer(i_data)) then
-                        min_number <= i_data;
-                    end if;
-                    if(conv_integer(max_number) < conv_integer(i_data)) then
-                        max_number <= i_data;
-                    end if;
-                    current_state <= next_state;
+             
+             
+             
+             
                    
                 -- effettiva scrittura sulla ram
                 WHEN PREPARATION_TO_WRITE =>
-                    if (conv_integer(end_dimension) +2  > conv_integer(contatore)) then
+                    if (conv_integer(end_dimension) + 2  > conv_integer(contatore_WRITE)) then
                         o_we <= '1';
                         o_en <= '1';
-                        o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore));
-                        o_data <=  STD_LOGIC_VECTOR(UNSIGNED(ram(conv_integer(contatore+1))));       
+                        o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore_WRITE));
+                        o_data <=  STD_LOGIC_VECTOR(UNSIGNED(temp_pixel(7 downto 0)));       
                         -- o_data <= "00000000";
+                        --  current_state <= finish;
                         current_state <= DATA_TO_RAM;
                     else  
                         o_done <= '1';
@@ -264,7 +275,21 @@ begin
                     
                 when DATA_TO_RAM =>
                     contatore <= contatore + 1;
-                    current_state <= PREPARATION_TO_WRITE;
+                    current_state <= GET_DATA; --ELABORATIONN 2 O PREPARAZIONE ALLA LETTURA
+                    
+                    
+                    
+                    
+                    
+                    
+                    ----------------------------------------
+                 --    if(conv_integer(dimension) + 2  <= conv_integer(contatore)) then
+                                       
+                           --            else 
+                                         -- QUA VUOL DIRE CHE NON è ANCORA FINITO IL CICLO
+                         --              end if;
+                    ------------------------------------------
+                    
                     
                 when FINISH =>
                     if i_start = '0' then
@@ -277,75 +302,3 @@ begin
     end process;
 
 end Behavioral;
-
-
-
-
-
---architecture Behavioral of project_reti_logiche is
---    type state_type is (S0, S1, S2, S3); 
---    signal next_state, current_state: state_type;
---    signal current_done: integer;
---begin
-
--- state_reg: process(i_clk, i_rst)
---  begin
---    if i_rst='1' then
---      current_state <= S0; -- vedere se modificare in seguito
---      current_done <= 0;  -- vedere se ridondante
---    elsif rising_edge(i_clk) then
---        case current_state is
---              when S0 =>
---                if i_start ='1' then
---                  current_state <= next_state;
---                end if;
---              when S1 =>
---                   if current_done = 1 then
---                  current_state <= next_state;
---                  end if;
---              when S2 =>
---                if i_start ='0' then
---                    current_state <= next_state;
---                end if;
---             when S3 =>
---               if current_done = 0 then
---                    current_state <= next_state;
---              end if;
---        end case;
---    end if;
---  end process;
-
---lambda: process(current_state)
---  begin
---    case current_state is
---      when S0 =>
---          next_state <= S1;
---      when S1 =>
---          next_state <= S2;
---      when S2 =>
---          next_state <= S2;
---      when S3 =>
---          next_state <= S0;
---    end case;
---  end process;
-  
---delta: process(current_state)
---    begin
---      case current_state is
---        when S0 =>
---         -- aspetto start
-         
---        when S1 =>
---         -- eseguo il codice (elaborazione)
-         
---        when S2 =>
---         --aspetto start
---        when S3 =>
---         --metto giù done 
---         o_done <= '0';
---         current_done <= 0;
---      end case;
---    end process;  
-
-
---end Behavioral;
