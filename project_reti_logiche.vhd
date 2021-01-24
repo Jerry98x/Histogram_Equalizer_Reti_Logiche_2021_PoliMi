@@ -52,7 +52,7 @@ end project_reti_logiche;
 architecture Behavioral of project_reti_logiche is
 
     -- stati
-    type state_type is (START, COLUMN_REQUEST, ROW_REQUEST, DATA_REQUEST, DATA_FROM_RAM, ELABORATION, DATA_TO_RAM, WAITING, FINISH, CALC_DIMENSION, WAITING_MAX_MIN, ELABORATION2,ELABORATION3,ELABORATION4,  PREPARATION_TO_WRITE,  GET_DATA);
+    type state_type is (START, COLUMN_REQUEST, ROW_REQUEST, DATA_REQUEST, DATA_FROM_RAM, ELABORATION,  WAITING, FINISH, WAITING_MAX_MIN, ELABORATION2,ELABORATION3,ELABORATION4,  PREPARATION_TO_WRITE,  GET_DATA);
     
     -- segnali
     signal current_state :  state_type;
@@ -60,23 +60,15 @@ architecture Behavioral of project_reti_logiche is
     --signal next_wait_state : state_type;
     
     signal dimension : std_logic_vector(15 downto 0) ;
-    signal end_dimension : std_logic_vector(15 downto 0) ;
+   -- signal end_dimension : std_logic_vector(15 downto 0) ;
     signal contatore : std_logic_vector(15 downto 0);
-    signal contatore_WRITE : std_logic_vector(15 downto 0);
-    signal N_COL : integer;
-    signal N_RIG : integer;
-    signal vertical_dimension : std_logic_vector(7 downto 0);
-    signal horizontal_dimension : std_logic_vector(7 downto 0);
-    
-    -- ram sbagliata
-    type ram_type is array (65535 downto 0) of std_logic_vector(7 downto 0);
-    signal ram : ram_type;
+
     signal max_number : std_logic_vector(7 downto 0):= (others => '0');
     signal min_number : std_logic_vector(7 downto 0) := (others => '1');
     signal shift_level : std_logic_vector(7 downto 0) := (others => '0');
     signal temp_pixel : std_logic_vector(15 downto 0) := (others => '0');
     signal delta : std_logic_vector(7 downto 0) := (others => '0');
-    signal temp_pixel2 : std_logic_vector(15 downto 0) := (others => '0');
+
     
 begin
 
@@ -99,15 +91,12 @@ begin
                         
                         dimension <= (others => '0');
                         contatore <= (others => '0');
-                         contatore_WRITE <= (others => '0');
                         current_state <= WAITING;
                         next_state <= COLUMN_REQUEST;
                     end if;
                     
                 when COLUMN_REQUEST =>
-                    vertical_dimension <= i_data;
-                    -- dati salvati nella ram fittizia all'indirizzo indicato da "contatore"
-                    ram(conv_integer(contatore)) <= i_data;
+                    dimension <= "00000000"  & i_data;                  
                     o_we <= '0';
                     o_en <= '1';
                     o_address <= (0 => '1', others => '0');
@@ -117,23 +106,19 @@ begin
                     
                 -- necessità di attendere un periodo di clock in più
                 when WAITING =>
-                     current_state <= next_state;
+                    current_state <= next_state;
                     
-                when ROW_REQUEST =>
-                    ram(conv_integer(contatore)) <= i_data;
-                    horizontal_dimension <= i_data;
-                    current_state <= CALC_DIMENSION;
+                when ROW_REQUEST =>                  
+                   -- dimension <= dimension * i_data;  
+                    dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) * conv_integer(i_data), 16));  
+                    current_state <= DATA_REQUEST;
                     contatore <= contatore + 1;
                     
-                when CALC_DIMENSION =>
-                    -- salvo il prodotto di numero colonne e numero righe in un vector unsigned di dimensione 8 bit
-                    dimension <= STD_LOGIC_VECTOR( "00000000" & TO_UNSIGNED(conv_integer(horizontal_dimension)*conv_integer(vertical_dimension), 8));
-                    current_state <= DATA_REQUEST;
                
                 when DATA_REQUEST =>
                     -- salvo in un vector di 16 bit l'indirizzo finale della ram che si avrà dopo la scrittura dell'immagine
                     --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
-                    end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
+                    --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
                     if (conv_integer(dimension) + 2  = conv_integer(contatore)) then
                         current_state <= ELABORATION;
                         contatore <= (1 => '1', others => '0');
@@ -167,7 +152,7 @@ begin
                         min_number <= i_data;
                     end if;
                     if(conv_integer(max_number) < conv_integer(i_data)) then
-                    max_number <= i_data;
+                        max_number <= i_data;
                     end if;
                     current_state <= DATA_REQUEST;
         
@@ -194,7 +179,7 @@ begin
                         shift_level <= "10000000";
                     end if;
                   
-                    current_state <= GET_DATA;
+                current_state <= GET_DATA;
 
 
 
@@ -213,7 +198,7 @@ begin
 
                 -- calcolo nuovo valore del pixel: shift dei bit di "shift_level"
                 -- usare la funzione apposita
-                WHEN ELABORATION3 =>
+                when ELABORATION3 =>
                     if((conv_integer(shift_level)) = 0) then
                         temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)), 16));
                     elsif(((conv_integer(shift_level))) = 1) then
@@ -247,54 +232,39 @@ begin
                  
                    
                     current_state <= PREPARATION_TO_WRITE;
-                    contatore_WRITE <= STD_LOGIC_VECTOR(TO_UNSIGNED( conv_integer(dimension) + conv_integer(CONTATORE), 16));
-                -- ma scrive prima nella ram "locale" e poi lo fa davvero in un altro stato?
-              
-                     
-             
-             
-             
-             
-                   
+                    -- ma scrive prima nella ram "locale" e poi lo fa davvero in un altro stato?
+
                 -- effettiva scrittura sulla ram
-                WHEN PREPARATION_TO_WRITE =>
-                    if (conv_integer(end_dimension) + 2  > conv_integer(contatore_WRITE)) then
+                when PREPARATION_TO_WRITE =>
+                    if (conv_integer(dimension)+ conv_integer(dimension) + 2 > conv_integer(contatore) + conv_integer(dimension)) then
                         o_we <= '1';
                         o_en <= '1';
-                        o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore_WRITE));
-                        o_data <=  STD_LOGIC_VECTOR(UNSIGNED(temp_pixel(7 downto 0)));       
+                        o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore)+ conv_integer(dimension));
+                     --   o_data <=  STD_LOGIC_VECTOR(UNSIGNED(temp_pixel(7 downto 0))); 
+                        o_data <=  temp_pixel(7 downto 0);
                         -- o_data <= "00000000";
-                        --  current_state <= finish;
-                        current_state <= DATA_TO_RAM;
-                    else  
-                        o_done <= '1';
-                        o_we <= '1';
-                        o_en <= '0';
-                        current_state <= FINISH;
-                    end if;
+                      --  current_state <= finish;
                     
-                when DATA_TO_RAM =>
-                    contatore <= contatore + 1;
-                    current_state <= GET_DATA; --ELABORATIONN 2 O PREPARAZIONE ALLA LETTURA
-                    
-                    
-                    
-                    
-                    
-                    
-                    ----------------------------------------
-                 --    if(conv_integer(dimension) + 2  <= conv_integer(contatore)) then
-                                       
-                           --            else 
-                                         -- QUA VUOL DIRE CHE NON è ANCORA FINITO IL CICLO
-                         --              end if;
-                    ------------------------------------------
-                    
+                      
+                        if(conv_integer(dimension)+ conv_integer(dimension) + 2 = conv_integer(contatore) + conv_integer(dimension) +1) then
+                        
+                            current_state <= FINISH;
+                        else
+                            current_state <= GET_DATA;
+                            contatore <= contatore + 1;
+                        end if;
+                      
+                    end if;                 
                     
                 when FINISH =>
+                 
                     if i_start = '0' then
                         o_done <= '0';
                         current_state <= START;
+                    else
+                        o_done <= '1';
+                        o_we <= '1';
+                        o_en <= '0';
                     end if;
             end case;
 
