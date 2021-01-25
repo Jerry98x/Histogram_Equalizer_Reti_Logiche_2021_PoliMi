@@ -93,6 +93,8 @@ begin
                         contatore <= (others => '0');
                         current_state <= WAITING;
                         next_state <= COLUMN_REQUEST;
+                        max_number <= (others => '0');
+                        min_number <= (others => '1');
                     end if;
                     
                 when COLUMN_REQUEST =>
@@ -106,7 +108,7 @@ begin
                     
                 -- necessità di attendere un periodo di clock in più
                 when WAITING =>
-                    current_state <= next_state;
+                    current_state <= next_state;    
                     
                 when ROW_REQUEST =>                  
                    -- dimension <= dimension * i_data;  
@@ -116,22 +118,27 @@ begin
                     
                
                 when DATA_REQUEST =>
-                    -- salvo in un vector di 16 bit l'indirizzo finale della ram che si avrà dopo la scrittura dell'immagine
-                    --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
-                    --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
-                    if (conv_integer(dimension) + 2  = conv_integer(contatore)) then
-                        current_state <= ELABORATION;
-                        contatore <= (1 => '1', others => '0');
-                        o_en <= '0';
-                        -- necessario fare la doppia conversione qua sotto???
-                        -- calcolo del delta value
-                        delta <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(max_number) - conv_integer(min_number), 8));                       
-                    else 
-                        o_we <= '0';
-                        o_en <= '1';
-                        current_state <= DATA_FROM_RAM;
-                        next_state <= DATA_REQUEST;
+                    if(conv_integer(dimension)= 0) then
+                        current_state <= FINISH;
+                    else
+                        -- salvo in un vector di 16 bit l'indirizzo finale della ram che si avrà dopo la scrittura dell'immagine
+                        --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
+                        --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
+                        if (conv_integer(dimension) + 2  = conv_integer(contatore)) then
+                            current_state <= ELABORATION;
+                            contatore <= (1 => '1', others => '0');
+                            o_en <= '0';
+                            -- necessario fare la doppia conversione qua sotto???
+                            -- calcolo del delta value
+                            delta <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(max_number) - conv_integer(min_number), 8));                       
+                        else 
+                            o_we <= '0';
+                            o_en <= '1';
+                            current_state <= DATA_FROM_RAM;
+                            next_state <= DATA_REQUEST;
+                        end if;
                     end if;
+                    
                     
                 -- lettura pixel
                 when DATA_FROM_RAM =>
