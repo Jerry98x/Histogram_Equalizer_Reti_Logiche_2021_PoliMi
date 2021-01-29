@@ -1,21 +1,11 @@
 ----------------------------------------------------------------------------------
--- Company: 
--- Engineer: 
+-- Company: Politecnico di Milano
+-- Engineers: Gerosa Andrea, Longaretti Lorenzo
 -- 
 -- Create Date: 11.01.2021 23:34:12
 -- Design Name: 
 -- Module Name: project_reti_logiche - Behavioral
--- Project Name: 
--- Target Devices: 
--- Tool Versions: 
--- Description: 
--- 
--- Dependencies: 
--- 
--- Revision:
--- Revision 0.01 - File Created
--- Additional Comments:
--- 
+-- Project Name: Progetto di Reti Logiche
 ----------------------------------------------------------------------------------
 
 
@@ -24,14 +14,6 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 use ieee.std_logic_unsigned.all;
 
--- Uncomment the following library declaration if using
--- arithmetic functions with Signed or Unsigned values
---use IEEE.NUMERIC_STD.ALL;
-
--- Uncomment the following library declaration if instantiating
--- any Xilinx leaf cells in this code.
---library UNISIM;
---use UNISIM.VComponents.all;
 
 entity project_reti_logiche is
 port (
@@ -52,15 +34,13 @@ end project_reti_logiche;
 architecture Behavioral of project_reti_logiche is
 
     -- stati
-    type state_type is (START, DATA_REQUEST, WAITING, MAX_MIN_CALCULATION, ELABORATION, ELABORATION2, ELABORATION3, ELABORATION4, PREPARATION_TO_WRITE, GET_DATA, FINISH);
+    type state_type is (START, DATA_REQUEST, WAITING, MAX_MIN_CALC, SHIFT_LEVEL_CALC, TEMP_PIXEL_CALC, TEMP_PIXEL_SHIFT, GREATER_THAN_255_CHECK, PREPARATION_TO_WRITE, GET_DATA, FINISH);
     
     -- segnali
     signal current_state :  state_type;
     signal next_state : state_type;
-    --signal next_wait_state : state_type;
     
     signal dimension : std_logic_vector(15 downto 0) ;
-   -- signal end_dimension : std_logic_vector(15 downto 0) ;
     signal contatore : std_logic_vector(15 downto 0);
 
     signal max_number : std_logic_vector(7 downto 0):= (others => '0');
@@ -69,24 +49,26 @@ architecture Behavioral of project_reti_logiche is
     signal temp_pixel : std_logic_vector(15 downto 0) := (others => '0');
     signal delta : std_logic_vector(7 downto 0) := (others => '0');
 
-    
+
 begin
 
     process(i_clk, i_rst)
     begin
         -- reset
         if i_rst = '1' then
-            current_state <= START; -- vedere se modificare in seguito
+            current_state <= START;
             o_done <= '0';
         -- eventi sul clock
         elsif rising_edge(i_clk) then
             case current_state is
+            
                 when START =>
                     if i_start = '1' then
                         o_we <= '0';
                         o_en <= '1';
                         
                         -- indirizzi di memoria partono da 0
+                        -- richiesta numero colonne
                         o_address <= (others => '0');
                         
                         dimension <= (others => '0');
@@ -102,49 +84,49 @@ begin
                     current_state <= next_state;    
                     
                 when DATA_REQUEST =>
+                    -- richiesta numero righe
                     if(conv_integer(contatore) = 0) then 
                         dimension <= "00000000" & i_data;                 
                         o_we <= '0';
                         o_en <= '1';
                         o_address <= (0 => '1', others => '0');
-                        --next state data request
+                        
                         current_state <= WAITING;
                         contatore <= contatore + 1;
-                                        
+                    
+                    -- calcolo dimensione immagine                    
                     elsif(conv_integer(contatore) = 1) then 
                         dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) * conv_integer(i_data), 16));  
                         contatore <= contatore + 1;
-                                       
+                    
+                    -- immagine con dimensione 0                 
                     elsif(conv_integer(dimension) = 0 and conv_integer(contatore) >= 2) then
                         current_state <= FINISH;
-                        
+                    
+                    -- immagine valida    
                     elsif(conv_integer(dimension) > 0 and conv_integer(contatore) >= 2) then
                         -- salvo in un vector di 16 bit l'indirizzo finale della ram che si avrà dopo la scrittura dell'immagine
-                        --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(2*(conv_integer(dimension)) + 2, 16));
-                        --end_dimension <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(dimension) + conv_integer(dimension) + 2, 16));  --  oppure +1   );
                         if (conv_integer(dimension) + 2  = conv_integer(contatore)) then
-                            current_state <= ELABORATION;
+                            current_state <= SHIFT_LEVEL_CALC;
                             contatore <= (1 => '1', others => '0');
-                            o_en <= '0';
 
                             -- calcolo del delta value
                             delta <= STD_LOGIC_VECTOR(TO_UNSIGNED(conv_integer(max_number) - conv_integer(min_number), 8));                       
                         else 
                             o_we <= '0';
                             o_en <= '1';
+                            
+                            -- prima richiesta pixel
                             o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore));
                             current_state <= WAITING;
-                            next_state <= MAX_MIN_CALCULATION;
+                            next_state <= MAX_MIN_CALC;
                         end if;
                     end if;
                    
 
-                -- calcolo nuovo valore del pixel: differenza tra valore corrente e valore minimo      
-                         
-                when MAX_MIN_CALCULATION => 
-                    -- ram(conv_integer(contatore)) <= i_data;
-                    contatore <= contatore + 1;
-                    -- ricerca del valore massimo e del valore minimo                 
+                -- ricerca del valore massimo e del valore minimo                      
+                when MAX_MIN_CALC => 
+                    contatore <= contatore + 1;              
                     if(conv_integer(min_number) > conv_integer(i_data)) then
                         min_number <= i_data;
                     end if;
@@ -154,7 +136,7 @@ begin
                     current_state <= DATA_REQUEST;
         
                 -- calcolo shift_level (funzione "floor")
-                when ELABORATION =>
+                when SHIFT_LEVEL_CALC =>
                     if((conv_integer(delta)) = 0)then
                         shift_level <= "00001000";
                     elsif(((conv_integer(delta))) <= 2 and (conv_integer(delta)) >= 1) then
@@ -177,53 +159,33 @@ begin
                   
                     current_state <= GET_DATA;
 
-
+                -- seconda richiesta pixel
                 when GET_DATA =>
                     o_we <= '0';
                     o_en <= '1';
                     o_address <= STD_LOGIC_VECTOR(UNSIGNED(contatore));
                     current_state <= WAITING;
-                    next_state <= ELABORATION2;
+                    next_state <= TEMP_PIXEL_CALC;
 
-
-                when ELABORATION2 =>
+                -- calcolo nuovo valore del pixel: differenza tra valore corrente e valore minimo
+                when TEMP_PIXEL_CALC =>
                    temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(i_data) - conv_integer(min_number)), 16));
-                   current_state <= ELABORATION3;
+                   current_state <= TEMP_PIXEL_SHIFT;
 
                 -- calcolo nuovo valore del pixel: shift dei bit di "shift_level"
-                when ELABORATION3 =>
---                    if((conv_integer(shift_level)) = 0) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)), 16));
---                    elsif(((conv_integer(shift_level))) = 1) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*2), 16));
---                    elsif((conv_integer(shift_level)) = 2) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*4), 16));
---                    elsif((conv_integer(shift_level)) = 3) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*8), 16));
---                    elsif((conv_integer(shift_level)) = 4) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*16), 16));
---                    elsif((conv_integer(shift_level)) = 5) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*32), 16));
---                    elsif((conv_integer(shift_level)) = 6) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*64), 16));
---                    elsif((conv_integer(shift_level)) = 7) then                     
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*128), 16));
---                    elsif((conv_integer(shift_level)) = 8) then
---                        temp_pixel <= STD_LOGIC_VECTOR(TO_UNSIGNED((conv_integer(temp_pixel)*256), 16));
---                    end if;
-
+                when TEMP_PIXEL_SHIFT =>
                     temp_pixel <= STD_LOGIC_VECTOR(shift_left(TO_UNSIGNED(conv_integer(temp_pixel), 16), conv_integer(shift_level)));
-                    current_state <=  ELABORATION4;
+                    current_state <=  GREATER_THAN_255_CHECK;
 
-                -- controllo sul nuovo valore (< 256) e 
-                when ELABORATION4 =>
+                -- controllo sul nuovo valore (< 256)
+                when GREATER_THAN_255_CHECK =>
                     if(conv_integer(temp_pixel) >= 255) then
                         temp_pixel <= "0000000011111111";
                     end if;
                  
                     current_state <= PREPARATION_TO_WRITE;
 
-                -- effettiva scrittura sulla ram
+                -- scrittura sulla ram
                 when PREPARATION_TO_WRITE =>
                     if (conv_integer(dimension) + conv_integer(dimension) + 2 > conv_integer(contatore) + conv_integer(dimension)) then
                         o_we <= '1';
@@ -240,7 +202,6 @@ begin
                     end if;                 
                     
                 when FINISH =>
-                 
                     if i_start = '0' then
                         o_done <= '0';
                         current_state <= START;
