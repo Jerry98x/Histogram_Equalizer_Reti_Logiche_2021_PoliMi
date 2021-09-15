@@ -1,4 +1,4 @@
-# Histogram equalizer
+# Basic histogram equalizer
 Progetto di reti logiche (2020/2021) - PoliMi: equalizzazione istogramma di un'immagine
 
 [Andrea Gerosa](https://github.com/Jerry98x)<br>
